@@ -4,10 +4,8 @@ a = Analysis(
     ['celestialsentry.py'],
     pathex=[],
     binaries=[],
-    # --- CHANGE: The 'datas' list is now empty ---
     # We are letting the Python script create its own data files at runtime.
     datas=[],
-    # --- Hidden imports are still required ---
     hiddenimports=[
         'discord',
         'discord.ext.commands',
@@ -42,9 +40,7 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    # Keep console=True for now to see logs and errors easily.
-    # Change to False for the final version to run in the background.
-    console=True,
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

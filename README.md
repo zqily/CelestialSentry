@@ -1,118 +1,120 @@
 # Celestial Sentry
-A Discord bot by [zqil](https://www.youtube.com/@Zqily) for The Strongest Battlegrounds community.
+A specialized Discord bot by [zqil](https://www.youtube.com/@Zqily) for The Strongest Battlegrounds community.
 
-Tired of getting teamed on in The Strongest Battlegrounds? Celestial Sentry is a specialized Discord bot designed to help you quickly rally support. It provides a streamlined system for requesting backup, notifying allies, and tracking the outcomes of your battles.
+Tired of getting teamed on in The Strongest Battlegrounds? Celestial Sentry is designed to help you quickly rally support. It provides a streamlined system for requesting backup, notifying allies, and tracking the outcomes of your battles.
 
 ## Table of Contents
 - [Celestial Sentry](#celestial-sentry)
   - [Table of Contents](#table-of-contents)
   - [Features](#features)
   - [Quick Start (For Server Owners)](#quick-start-for-server-owners)
+    - [Prerequisite: Creating a Discord Bot](#prerequisite-creating-a-discord-bot)
     - [Managing the Bot Process](#managing-the-bot-process)
-      - [Automating Startup (Recommended)](#automating-startup-recommended)
-      - [Shutting Down the Bot](#shutting-down-the-bot)
   - [Command Reference](#command-reference)
-      - [Interactive Buttons](#interactive-buttons)
   - [For Developers](#for-developers)
-      - [1. Prerequisites](#1-prerequisites)
-      - [2. Clone \& Setup](#2-clone--setup)
-      - [3. Configure](#3-configure)
-      - [4. Run](#4-run)
   - [Building From Source](#building-from-source)
 
 ## Features
-- **Easy Backup Requests**: Use the `/backup` command to instantly create a request embed.
-- **Targeted Pings**: Notifies a specific, configurable role (e.g., `@Backup Squad`) to get the right people's attention without disturbing everyone.
-- **Detailed Information**: Embeds include the user needing help, opponent names, region, and an optional server link for quick joins.
-- **Interactive Controls**: Conclude engagements with `Win`, `Lose`, or `Truce` buttons. The requestor can also edit the opponent list on the fly.
-- **War Statistics**: Automatically tracks server-wide statistics like win/loss ratio, total engagements, and average battle duration with the `/warstats` command.
-- **Admin Tools**: Easy server setup (`/setup`), test requests without pings (`/debugbackup`), and data management (`/resetstats`).
-- **Persistent & Reliable**: Buttons work even after the bot restarts. All configuration and war data are saved locally to `json` files.
-- **Easy Deployment**: Comes pre-packaged as a `.exe` for simple, no-code setup on a Windows machine or server.
+- **Rapid Backup Requests**: Use the `/backup` command (with a 60-second cooldown per user) to instantly create a clear, detailed request embed.
+- **Targeted Pings**: Pings a specific, configurable role (e.g., `@Backup Squad`) to notify allies effectively.
+- **Detailed War Info**: Embeds display the user in need, opponent names, region, and an optional join link. Embed color and thumbnail are customizable via `/setup`.
+- **Interactive Battle Controls**: Users can conclude active engagements with `Win`, `Lose`, or `Truce` buttons, and the request author or an admin can use `Edit Opps` to update the opponent list.
+- **Persistent War Statistics**: Automatically tracks server-wide statistics (win/loss ratio, total engagements, average duration) using the `/warstats` command. Data is saved persistently in `war_data.json`.
+- **Comprehensive Admin Tools**: Includes easy server setup (`/setup`), testing functionality (`/debugbackup`), and data management (`/resetstats`).
+- **Reliable Operation**: Built-in error handling, permissions checks, and persistent data management ensure the bot operates reliably even after restarts.
 
 ## Quick Start (For Server Owners)
-This guide is for running the pre-compiled `CelestialSentry.exe` from a release.
+This guide explains how to get the pre-compiled `CelestialSentry.exe` running on a Windows system.
 
-1.  **Download the Bot**
-    - Go to the [**Releases Page**](https://github.com/zqil/CelestialSentry/releases) on this repository.
-    - Download the latest `.zip` file.
+### Prerequisite: Creating a Discord Bot
 
-2.  **Extract the Files**
-    - Create a new, dedicated folder for your bot.
-    - Extract the contents of the `.zip` file into this new folder. You will see:
-      - `CelestialSentry.exe` (the bot program)
-      - `example.env` (an example configuration file)
-      - `README.txt` (a quick-start guide)
+If you already have a token and the bot is invited, skip to Step 4.
 
-3.  **Configure the Bot Token**
-    - In your folder, **rename** the `example.env` file to just `.env`.
-    - Open the `.env` file with a text editor (like Notepad).
-    - You need to provide a Discord Bot Token. If you don't have one, follow the official [Discord guide](https://discordpy.readthedocs.io/en/stable/discord.html) to create a bot application and get its token.
-    - Paste your token into the file, inside the quotes:
+1.  **Go to the Discord Developer Portal**: Navigate to [Discord Developers](https://discord.com/developers/applications).
+2.  **Create a New Application**: Click "New Application" and give your bot a name.
+3.  **Get the Token & Configure Intents**:
+    *   In the Application menu, go to the **Bot** tab.
+    *   Click **Add Bot**, then confirm.
+    *   Under "Token", click **Copy**. This is your secret `DISCORD_TOKEN`. **Keep this private.**
+    *   **Crucial Step:** Under "Privileged Gateway Intents", enable **PRESENCE INTENT** and **SERVER MEMBERS INTENT**. These are required for the bot to check member permissions and manage roles effectively.
+4.  **Generate Invite Link**:
+    *   Go to the **OAuth2** -> **URL Generator** tab.
+    *   Under "SCOPES", select **`bot`** and **`application.commands`**.
+    *   Under "BOT PERMISSIONS", select `Send Messages`, `Embed Links`, `Read Message History`, and `Mention Everyone`.
+    *   Copy the generated URL and use it to invite the bot to your server.
+
+---
+
+5.  **Download and Extract**
+    - Download the latest release `.zip` file from the [Releases Page](https://github.com/zqil/CelestialSentry/releases).
+    - Create a new, dedicated folder (e.g., `C:/CelestialSentry`).
+    - Extract the contents (`CelestialSentry.exe`, `example.env`, etc.) into this folder.
+
+6.  **Configure `.env`**
+    - In your folder, **rename** `example.env` to `.env`.
+    - Open the `.env` file with a text editor.
+    - Paste your Discord Token (obtained in Step 3) inside the quotes:
       ```
       DISCORD_TOKEN="YOUR_SECRET_TOKEN_HERE"
       ```
     - Save and close the file.
 
-4.  **Run the Bot**
+7.  **Run the Bot**
     - Double-click `CelestialSentry.exe`.
-    - The bot will now be running in the background.
-    - **Note:** A `bot.log` file will be created in the same folder. If you encounter issues, check this file for details.
+    - The bot will now be running. A `bot.log` file will be created in the same folder for logging activity and errors.
 
-5.  **Setup in Your Discord Server**
-    - **Invite the bot** to your server. You can generate an invite link from your bot's application page in the Discord Developer Portal (under "OAuth2" -> "URL Generator"). You will need the `bot` and `application.commands` scopes.
-    - **Required Permissions**: Grant the bot `Send Messages`, `Embed Links`, `Read Message History`, and `Mention Everyone`.
-    - In your server, create a role for people who want to be pinged for backup (e.g., "Backup Squad").
-    - Create a dedicated channel where requests will be sent (e.g., `#backup-requests`).
-    - As a server administrator, run the `/setup` command in your server. For example:
-      `/setup backup_channel: #backup-requests backup_role: @Backup Squad`
+8.  **Server Setup**
+    - Create a role for people who want to be notified for backup (e.g., `@Backup Squad`).
+    - Create a dedicated channel for requests (e.g., `#backup-requests`).
+    - As a server administrator, run the `/setup` command in *any* channel. Example usage:
+      ```
+      /setup backup_channel:#backup-requests backup_role:@Backup Squad embed_color:#FF5733 thumbnail_url:https://myimage.com/logo.png
+      ```
+    - The `embed_color` and `thumbnail_url` parameters are optional for visual customization.
 
-The bot is now fully configured and ready to use!
+The bot is now fully configured and ready for action!
 
 ### Managing the Bot Process
+Since the compiled bot runs without a command line window (`console=False`), use these methods to manage it:
 
 #### Automating Startup (Recommended)
-If you are running the bot on a personal computer instead of a dedicated server, you can make it start automatically with Windows.
-
 1.  Right-click `CelestialSentry.exe` and select **Create shortcut**.
-2.  Press the **Windows Key + R** to open the Run dialog.
-3.  Type `shell:startup` and press Enter. A folder will open.
-4.  Move the shortcut you created in step 1 into this folder.
-The bot will now launch automatically every time you log into your computer.
+2.  Press the **Windows Key + R**, type `shell:startup`, and press Enter.
+3.  Move the shortcut into the opened "Startup" folder.
+The bot will now launch automatically when the user logs into Windows.
 
 #### Shutting Down the Bot
-Since the bot runs as a background process, you must use the Task Manager to close it.
-
 1.  Press **Ctrl + Shift + Esc** to open the Task Manager.
 2.  Go to the "Details" or "Processes" tab.
-3.  Find `CelestialSentry.exe` in the list.
-4.  Select it and click **End task**.
+3.  Find and select `CelestialSentry.exe`.
+4.  Click **End task**.
 
-> On macOS, you can achieve this using the **Activity Monitor**. On Linux, you would use a command like `pkill CelestialSentry`.
+> On macOS, use the **Activity Monitor**.
 
 ## Command Reference
 
-| Command | Parameters | Description | Permissions |
-| --- | --- | --- | --- |
-| `/backup` | `roblox_user`, `opps`, `region`, `[link]` | Creates a backup request and pings the configured role. | Everyone |
-| `/warstats` | *None* | Displays a summary of all concluded battles for the server. | Everyone |
-| `/setup` | `backup_channel`, `backup_role` | Configures the bot's request channel and ping role. | Administrator |
-| `/debugbackup` | `roblox_user`, `opps`, `region`, `[link]` | Creates a backup request without pinging the role. Ideal for testing. | Administrator |
-| `/resetstats` | *None* | **Deletes all recorded war statistics for the server.** This is irreversible. | Administrator |
+| Command | Parameters | Description | Cooldown | Permissions |
+| :--- | :--- | :--- | :--- | :--- |
+| `/help` | *None* | Shows a list of all available commands. | N/A | Everyone |
+| `/backup` | `roblox_user`, `opps`, `region`, `[link]` | Creates a backup request, pings the configured role, and records war data upon conclusion. | 60 seconds per user | Everyone |
+| `/warstats` | *None* | Displays a summary of all concluded battles for the server (W/L/T ratio, average duration). | N/A | Everyone |
+| `/setup` | `backup_channel`, `backup_role`, `[embed_color]`, `[thumbnail_url]` | Configures the primary channel and role. Optional parameters allow customization of embed appearance. | N/A | Administrator |
+| `/debugbackup` | `roblox_user`, `opps`, `region`, `[link]` | Creates a backup request **without** pinging the role or recording statistics. Ideal for testing configurations. | N/A | Administrator |
+| `/resetstats` | *None* | **WARNING:** Prompts for confirmation to **delete all recorded war statistics for the server.** This is irreversible. | N/A | Administrator |
 
 #### Interactive Buttons
-- `Win` / `Lose` / `Truce`: Ends the request and records the result for the server's statistics.
-- `Edit Opps`: Opens a pop-up to modify the list of opponents in an active request.
-> **Note**: Only the original author of the request or a server administrator can use these buttons.
+These buttons appear on the backup request embed. Only the original author of the request or a server administrator can use them.
+- `Win` / `Lose` / `Truce`: Ends the request, updates the embed, and records the result for `/warstats`.
+- `Edit Opps`: Opens a pop-up modal allowing the user to modify the list of opponents in an active request.
 
 ## For Developers
 Want to run the bot from source or contribute?
 
-#### 1. Prerequisites
+### 1. Prerequisites
 - Python 3.8+
 - Git
 
-#### 2. Clone & Setup
+### 2. Clone & Setup
 ```bash
 # Clone the repository
 git clone https://github.com/zqil/CelestialSentry.git
@@ -131,17 +133,17 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-#### 3. Configure
-- Create a `.env` file in the root directory (see step 3 of the [Quick Start](#quick-start-for-server-owners) for instructions).
-- **(Recommended)** Open `bot.py` and change the `DEV_GUILD_ID` variable to your private test server's ID. This will make your slash commands update instantly during development.
+### 3. Configure
+- Create a `.env` file in the root directory following the instructions in the [Quick Start](#prerequisite-creating-a-discord-bot).
+- **(Recommended)** If developing, open `celestialsentry.py` and change the `DEV_GUILD_ID` variable (around line 287) to your private test server's ID. This will force slash command synchronization instantly during development.
 
-#### 4. Run
+### 4. Run
 ```bash
-python bot.py
+python celestialsentry.py
 ```
 
 ## Building From Source
-This project uses [PyInstaller](https://pyinstaller.org/en/stable/) to create a standalone executable for Windows.
+This project uses [PyInstaller](https://pyinstaller.org/en/stable/) to create a standalone executable for Windows based on the `bot.spec` configuration file.
 
 1.  **Install PyInstaller:**
     ```bash
@@ -149,11 +151,12 @@ This project uses [PyInstaller](https://pyinstaller.org/en/stable/) to create a 
     ```
 
 2.  **Run the Build Command:**
+    The `bot.spec` file contains all necessary configuration, including hidden imports and the icon path.
     (Execute this from the project's root directory)
     ```bash
-    pyinstaller --onefile --clean --windowed -n CelestialSentry bot.py
+    pyinstaller bot.spec
     ```
 
 3.  **Find the Executable:**
     - The final `CelestialSentry.exe` will be located in the newly created `dist` folder.
-    - To run it, place the `.exe` in a new folder alongside a configured `.env` file. The `config.json` and `war_data.json` files will be generated automatically in that folder on the first run.
+    - To run it, place the `.exe` in a new folder alongside a configured `.env` file. The data files (`config.json`, `war_data.json`, and `bot.log`) will be generated automatically in that folder on the first run.

@@ -110,7 +110,13 @@ class BackupBot(discord.Client):
         guild = interaction.guild
         command = interaction.command.name if interaction.command else "unknown_command"
 
-        if isinstance(error, discord.app_commands.MissingPermissions):
+        if isinstance(error, discord.app_commands.CommandOnCooldown):
+            retry_after = int(error.retry_after)
+            await interaction.response.send_message(
+                f"⏳ **Woah There, Warrior!**\nThis command is on cooldown. Please try again in **{retry_after}** second{'s' if retry_after > 1 else ''}.",
+                ephemeral=True
+            )
+        elif isinstance(error, discord.app_commands.MissingPermissions):
             logger.warning(f"User {user} ({user.id}) tried to use '/{command}' in guild '{guild.name}' ({guild.id}) without permissions.")
             await interaction.response.send_message(
                 "❌ **Permission Denied**\nYou do not have the required permissions to run this command.",
@@ -164,6 +170,42 @@ class BackupBot(discord.Client):
             
             await interaction.response.edit_message(embed=original_embed)
             logger.info(f"Opponents list edited by {interaction.user} in guild '{interaction.guild.name}' ({interaction.guild.id})")
+
+    class ConfirmResetView(View):
+        def __init__(self, *, bot: 'BackupBot', author: discord.User):
+            super().__init__(timeout=60.0)
+            self.bot = bot
+            self.author = author
+            self.confirmed = False
+
+        async def interaction_check(self, interaction: discord.Interaction) -> bool:
+            if interaction.user.id != self.author.id:
+                await interaction.response.send_message("This isn't for you!", ephemeral=True)
+                return False
+            return True
+
+        @discord.ui.button(label="Confirm Reset", style=discord.ButtonStyle.danger)
+        async def confirm(self, interaction: discord.Interaction, button: Button):
+            guild_id = str(interaction.guild.id)
+            war_count = 0
+            guild_war_data = self.bot.war_data.get(guild_id)
+
+            if guild_war_data:
+                war_count = len(guild_war_data)
+                self.bot.war_data.set(guild_id, [])
+                await self.bot.war_data.save()
+            
+            logger.warning(f"War data for guild '{interaction.guild.name}' ({guild_id}) was reset by admin {self.author}.")
+
+            for item in self.children:
+                item.disabled = True
+            
+            await interaction.response.edit_message(
+                content=f"✅ **Success!** All **{war_count}** war records have been deleted for this server.", 
+                view=self
+            )
+            self.confirmed = True
+            self.stop()
 
     class BackupControlsView(View):
         def __init__(self, *, bot: 'BackupBot'):
@@ -317,13 +359,19 @@ async def _send_backup_request(
             ephemeral=True
         )
         return
+        
+    custom_color_val = server_config.get("embed_color")
+    color = discord.Color(custom_color_val) if custom_color_val is not None else discord.Color.gold()
+    
+    custom_thumbnail_url = server_config.get("thumbnail_url")
+    thumbnail_url = custom_thumbnail_url or "https://i.imgur.com/P5LJ02a.png"
 
     embed = discord.Embed(
         title="⚔️ Backup Request! ⚔️",
         description="A warrior requires aid! The status of this engagement is **Ongoing**.",
-        color=discord.Color.gold()
+        color=color
     )
-    embed.set_thumbnail(url="https://i.imgur.com/P5LJ02a.png")
+    embed.set_thumbnail(url=thumbnail_url)
     user_info = f"**Discord:** {interaction.user.mention}\n**Roblox:** `{roblox_user}`"
     embed.add_field(name="🛡️ User in Need", value=user_info, inline=False)
     embed.add_field(name="💀 Opponents", value=f"`{opps}`", inline=False)
@@ -353,24 +401,80 @@ async def _send_backup_request(
 
 
 # --- Slash Command Definitions ---
+@bot.tree.command(name="help", description="Shows a list of all available commands.")
+async def help_command(interaction: discord.Interaction):
+    embed = discord.Embed(
+        title="Celestial Sentry Commands",
+        description="Here's a list of commands you can use:",
+        color=discord.Color.blurple()
+    )
+    
+    admin_commands = ["setup", "debugbackup", "resetstats"]
+    
+    for command in bot.tree.get_commands():
+        description = command.description
+        if command.name in admin_commands:
+            description += " `[ADMIN]`"
+        
+        embed.add_field(name=f"/{command.name}", value=description, inline=False)
+    
+    embed.set_footer(text="Contact an administrator for help with admin-only commands.")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
 @bot.tree.command(name="setup", description="[ADMIN] Configure the bot for this server.")
 @discord.app_commands.checks.has_permissions(administrator=True)
-@discord.app_commands.describe(backup_channel="The channel where backup requests are sent.", backup_role="The role to be pinged for backup requests.")
-async def setup_command(interaction: discord.Interaction, backup_channel: discord.TextChannel, backup_role: discord.Role):
+@discord.app_commands.describe(
+    backup_channel="The channel where backup requests are sent.", 
+    backup_role="The role to be pinged for backup requests.",
+    embed_color="A hex color code for embeds (e.g., #FF5733).",
+    thumbnail_url="A URL for the embed thumbnail image."
+)
+async def setup_command(
+    interaction: discord.Interaction, 
+    backup_channel: discord.TextChannel, 
+    backup_role: discord.Role,
+    embed_color: str = None,
+    thumbnail_url: str = None
+):
     bot_instance = interaction.client
     guild_id = str(interaction.guild.id)
     
-    bot_instance.configs.set(guild_id, {"backup_role_id": backup_role.id, "allowed_channel_id": backup_channel.id})
-    await bot_instance.configs.save()
-    
-    embed = discord.Embed(title="✅ Configuration Saved!", description="The bot has been successfully configured.", color=discord.Color.green())
+    config_data = bot_instance.configs.get(guild_id, {})
+    config_data["backup_role_id"] = backup_role.id
+    config_data["allowed_channel_id"] = backup_channel.id
+
+    embed = discord.Embed(title="✅ Configuration Updated!", description="The bot's settings have been updated.", color=discord.Color.green())
     embed.add_field(name="Backup Channel", value=backup_channel.mention, inline=False)
     embed.add_field(name="Backup Role", value=backup_role.mention, inline=False)
+    
+    if embed_color:
+        match = re.match(r'^#?([A-Fa-f0-9]{6})$', embed_color)
+        if match:
+            color_int = int(match.group(1), 16)
+            config_data['embed_color'] = color_int
+            embed.add_field(name="Embed Color", value=f"`#{match.group(1).upper()}`", inline=True)
+        else:
+            await interaction.response.send_message("❌ **Invalid Color:** Please use a valid 6-digit hex format (e.g., `#FF5733`).", ephemeral=True)
+            return
+
+    if thumbnail_url:
+        if thumbnail_url.startswith(('http://', 'https://')):
+            config_data['thumbnail_url'] = thumbnail_url
+            embed.add_field(name="Thumbnail URL", value=f"[Link]({thumbnail_url})", inline=True)
+        else:
+            await interaction.response.send_message("❌ **Invalid URL:** Thumbnail URL must start with `http://` or `https://`.", ephemeral=True)
+            return
+
+    bot_instance.configs.set(guild_id, config_data)
+    await bot_instance.configs.save()
+    
     await interaction.response.send_message(embed=embed, ephemeral=True)
     logger.info(f"Bot configured for guild '{interaction.guild.name}' ({guild_id}) by admin {interaction.user}.")
 
 
 @bot.tree.command(name="backup", description="Request backup from your allies.")
+@discord.app_commands.checks.cooldown(1, 60.0, key=lambda i: (i.guild_id, i.user.id))
 @discord.app_commands.describe(roblox_user="Your Roblox username or profile link.", opps="The usernames of the players teaming on you.", link="Optional: A private server link for easy joining.")
 @discord.app_commands.choices(region=[
     discord.app_commands.Choice(name="🇺🇸 US East", value="US East"), discord.app_commands.Choice(name="🇺🇸 US West", value="US West"),
@@ -435,15 +539,26 @@ async def warstats_command(interaction: discord.Interaction):
 async def resetstats_command(interaction: discord.Interaction):
     guild_id = str(interaction.guild.id)
 
-    if bot.war_data.get(guild_id):
-        war_count = len(bot.war_data.get(guild_id))
-        bot.war_data.set(guild_id, [])
-        await bot.war_data.save()
-        
-        await interaction.response.send_message(f"✅ **Success!** All **{war_count}** war records have been deleted.", ephemeral=True)
-        logger.warning(f"War data for guild '{interaction.guild.name}' ({guild_id}) was reset by admin {interaction.user}.")
-    else:
-        await interaction.response.send_message("ℹ️ No war data found for this server; no action was taken.", ephemeral=True)
+    if not bot.war_data.get(guild_id):
+        await interaction.response.send_message("ℹ️ No war data found for this server; no action is needed.", ephemeral=True)
+        return
+
+    view = bot.ConfirmResetView(bot=bot, author=interaction.user)
+    await interaction.response.send_message(
+        "**⚠️ Are you sure?**\nThis action is irreversible and will delete all war statistics for this server.",
+        view=view,
+        ephemeral=True
+    )
+
+    await view.wait()
+    
+    if not view.confirmed:
+        for item in view.children:
+            item.disabled = True
+        await interaction.edit_original_response(
+            content="Confirmation timed out. No stats were reset.",
+            view=view
+        )
 
 
 # --- Main execution block ---

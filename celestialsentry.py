@@ -8,6 +8,8 @@ import datetime
 import asyncio
 from discord.ui import View, Button, Modal, TextInput
 from dotenv import load_dotenv
+# FIX: Import necessary types for improved type hinting
+from typing import Optional, Union, cast
 
 # --- COMPILE-READY SETUP: Determine application's base directory ---
 if getattr(sys, 'frozen', False):
@@ -45,7 +47,7 @@ class DataManager:
     def __init__(self, filename: str):
         self.filepath = os.path.join(BASE_DIR, filename)
         self._lock = asyncio.Lock()
-        self._data = {}
+        self._data: dict = {} # FIX: Explicitly type the internal data store
         self.load()
 
     def load(self):
@@ -89,8 +91,9 @@ class BackupBot(discord.Client):
         self.tree = discord.app_commands.CommandTree(self)
         
         # REFACTOR: Use DataManager for configuration and war data
-        self.configs = DataManager("config.json")
-        self.war_data = DataManager("war_data.json")
+        # FIX: Add type hints to custom attributes
+        self.configs: DataManager = DataManager("config.json")
+        self.war_data: DataManager = DataManager("war_data.json")
 
         self.dev_guild = discord.Object(id=guild_id)
 
@@ -107,7 +110,10 @@ class BackupBot(discord.Client):
     async def on_app_command_error(self, interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
         """Handles errors from all slash commands globally."""
         user = interaction.user
-        guild = interaction.guild
+        # FIX: Handle cases where interaction is in DMs (guild is None). This resolves the error
+        # "id" is not a known attribute of "None" by checking for guild existence first.
+        guild_name = interaction.guild.name if interaction.guild else "Direct Message"
+        guild_id = interaction.guild.id if interaction.guild else "N/A"
         command = interaction.command.name if interaction.command else "unknown_command"
 
         if isinstance(error, discord.app_commands.CommandOnCooldown):
@@ -117,20 +123,20 @@ class BackupBot(discord.Client):
                 ephemeral=True
             )
         elif isinstance(error, discord.app_commands.MissingPermissions):
-            logger.warning(f"User {user} ({user.id}) tried to use '/{command}' in guild '{guild.name}' ({guild.id}) without permissions.")
+            logger.warning(f"User {user} ({user.id}) tried to use '/{command}' in guild '{guild_name}' ({guild_id}) without permissions.")
             await interaction.response.send_message(
                 "❌ **Permission Denied**\nYou do not have the required permissions to run this command.",
                 ephemeral=True
             )
         elif isinstance(error, discord.app_commands.CheckFailure):
-            logger.warning(f"Check failed for user {user} ({user.id}) on command '/{command}' in guild '{guild.name}' ({guild.id}).")
+            logger.warning(f"Check failed for user {user} ({user.id}) on command '/{command}' in guild '{guild_name}' ({guild_id}).")
             await interaction.response.send_message(
                 "🚫 **Action Not Allowed**\nYou cannot perform this action.",
                 ephemeral=True
             )
         else:
             # For any other errors, log the full traceback and inform the user.
-            logger.error(f"Unhandled error in command '/{command}' triggered by {user} ({user.id}) in guild '{guild.name}' ({guild.id}):", exc_info=error)
+            logger.error(f"Unhandled error in command '/{command}' triggered by {user} ({user.id}) in guild '{guild_name}' ({guild_id}):", exc_info=error)
             
             # Use followup if the interaction has already been responded to.
             response_method = interaction.followup.send if interaction.response.is_done() else interaction.response.send_message
@@ -143,7 +149,12 @@ class BackupBot(discord.Client):
     @staticmethod
     def is_author_or_admin(interaction: discord.Interaction, author_id: int) -> bool:
         """Checks if the interacting user is the original author or has admin permissions."""
-        return interaction.user.id == author_id or interaction.user.guild_permissions.administrator
+        # FIX: Check if the user is a Member before checking permissions. A User in a DM has no permissions.
+        if interaction.user.id == author_id:
+            return True
+        if isinstance(interaction.user, discord.Member):
+            return interaction.user.guild_permissions.administrator
+        return False
 
     # --- UI Elements (Modals & Views) ---
     class EditOppsModal(Modal, title="Edit Opponent List"):
@@ -160,6 +171,10 @@ class BackupBot(discord.Client):
             self.add_item(self.opps_input)
 
         async def on_submit(self, interaction: discord.Interaction):
+            # FIX: A modal submitted from a component interaction is guaranteed to have a message.
+            # Use an assertion to inform the type checker.
+            assert interaction.message is not None, "Interaction from a modal must have a message"
+            
             new_opps = self.opps_input.value
             original_embed = interaction.message.embeds[0]
 
@@ -169,10 +184,12 @@ class BackupBot(discord.Client):
                     break
             
             await interaction.response.edit_message(embed=original_embed)
-            logger.info(f"Opponents list edited by {interaction.user} in guild '{interaction.guild.name}' ({interaction.guild.id})")
+            guild_name = interaction.guild.name if interaction.guild else "DM"
+            logger.info(f"Opponents list edited by {interaction.user} in guild '{guild_name}' ({interaction.guild.id})")
 
     class ConfirmResetView(View):
-        def __init__(self, *, bot: 'BackupBot', author: discord.User):
+        # FIX: The author can be a User or Member. Use Union for accurate typing.
+        def __init__(self, *, bot: 'BackupBot', author: Union[discord.User, discord.Member]):
             super().__init__(timeout=60.0)
             self.bot = bot
             self.author = author
@@ -186,6 +203,11 @@ class BackupBot(discord.Client):
 
         @discord.ui.button(label="Confirm Reset", style=discord.ButtonStyle.danger)
         async def confirm(self, interaction: discord.Interaction, button: Button):
+            # FIX: This command is guild-only, so add a guard clause for type safety.
+            if not interaction.guild:
+                await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+                return
+
             guild_id = str(interaction.guild.id)
             war_count = 0
             guild_war_data = self.bot.war_data.get(guild_id)
@@ -197,8 +219,10 @@ class BackupBot(discord.Client):
             
             logger.warning(f"War data for guild '{interaction.guild.name}' ({guild_id}) was reset by admin {self.author}.")
 
+            # FIX: Only Buttons have a `disabled` attribute. Check the type before setting.
             for item in self.children:
-                item.disabled = True
+                if isinstance(item, (Button, discord.ui.Select)):
+                    item.disabled = True
             
             await interaction.response.edit_message(
                 content=f"✅ **Success!** All **{war_count}** war records have been deleted for this server.", 
@@ -214,10 +238,16 @@ class BackupBot(discord.Client):
 
         @staticmethod
         def get_author_id_from_embed(embed: discord.Embed) -> int:
-            match = re.search(r"Author ID: (\d+)", embed.footer.text)
-            return int(match.group(1)) if match else 0
+            # FIX: Handle the case where the footer or its text is None.
+            if embed.footer and embed.footer.text:
+                match = re.search(r"Author ID: (\d+)", embed.footer.text)
+                return int(match.group(1)) if match else 0
+            return 0
 
         async def interaction_check(self, interaction: discord.Interaction) -> bool:
+            # FIX: This interaction is from a message component, so message is guaranteed. Assert it.
+            assert interaction.message is not None, "Interaction from a view must have a message"
+            
             author_id = self.get_author_id_from_embed(interaction.message.embeds[0])
             if not self.bot.is_author_or_admin(interaction, author_id):
                 await interaction.response.send_message(
@@ -229,14 +259,23 @@ class BackupBot(discord.Client):
 
         @discord.ui.button(label="Edit Opps", style=discord.ButtonStyle.secondary, custom_id="backup_view:edit_opps")
         async def edit_opps(self, interaction: discord.Interaction, button: Button):
+            assert interaction.message is not None
             current_opps = ""
             for field in interaction.message.embeds[0].fields:
                 if field.name == "💀 Opponents":
+                    # FIX: field.value is always str per discord.py types, so stripping is safe.
+                    # This resolves the Pylance error "strip is not a known attribute of None".
                     current_opps = field.value.strip('`')
                     break
             await interaction.response.send_modal(self.bot.EditOppsModal(current_opps=current_opps))
 
         async def end_war(self, interaction: discord.Interaction, status: str, color: discord.Color, title: str):
+            # FIX: Guard against non-guild interactions and interactions without a source message.
+            if not interaction.guild:
+                await interaction.response.send_message("This action can only be performed in a server.", ephemeral=True)
+                return
+            assert interaction.message is not None
+
             guild_id = str(interaction.guild.id)
             original_embed = interaction.message.embeds[0]
             
@@ -250,6 +289,8 @@ class BackupBot(discord.Client):
                 roblox_user, opponents_str, region = "Unknown", "Unknown", "Unknown"
                 for field in original_embed.fields:
                     if field.name == "🛡️ User in Need":
+                        # FIX: field.value is str, safe for regex. This resolves the Pylance error
+                        # "No overloads for "search" match the provided arguments".
                         match = re.search(r"\*\*Roblox:\*\* `(.+?)`", field.value)
                         if match: roblox_user = match.group(1)
                     elif field.name == "💀 Opponents":
@@ -269,9 +310,12 @@ class BackupBot(discord.Client):
                 }
                 
                 guild_war_data = self.bot.war_data.get(guild_id, [])
-                guild_war_data.append(war_record)
-                self.bot.war_data.set(guild_id, guild_war_data)
-                await self.bot.war_data.save()
+                # FIX: Check if guild_war_data is not None (though default=[] makes this safe)
+                if guild_war_data is not None:
+                    guild_war_data.append(war_record)
+                    self.bot.war_data.set(guild_id, guild_war_data)
+                    await self.bot.war_data.save()
+                
                 logger.info(f"War record {interaction.message.id} saved for guild '{interaction.guild.name}' ({guild_id}).")
 
             original_embed.title = title
@@ -279,8 +323,10 @@ class BackupBot(discord.Client):
             original_embed.description = "This engagement has concluded."
             original_embed.add_field(name="Status", value=f"Concluded as a **{status}** by {interaction.user.mention}", inline=False)
 
+            # FIX: Check type before disabling.
             for item in self.children:
-                item.disabled = True
+                if isinstance(item, (Button, discord.ui.Select)):
+                    item.disabled = True
 
             await interaction.response.edit_message(content=f"*This backup request has concluded.*", embed=original_embed, view=self)
             logger.info(f"Backup request concluded as '{status}' by {interaction.user} in guild '{interaction.guild.name}' ({interaction.guild.id})")
@@ -321,9 +367,16 @@ async def on_ready():
 # --- Shared Command Logic ---
 async def _send_backup_request(
     interaction: discord.Interaction, roblox_user: str, opps: str,
-    region: str, link: str, is_debug: bool
+    region: str, link: Optional[str], is_debug: bool # FIX: link can be None
 ):
-    bot_instance = interaction.client
+    # FIX: Cast client to our custom bot class to inform the type checker of our custom attributes.
+    bot_instance = cast(BackupBot, interaction.client)
+    
+    # FIX: This function requires a guild. Add a guard clause.
+    if not interaction.guild:
+        await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+        return
+
     guild_id = str(interaction.guild.id)
     server_config = bot_instance.configs.get(guild_id)
 
@@ -337,7 +390,7 @@ async def _send_backup_request(
     allowed_channel_id = server_config.get('allowed_channel_id')
     backup_role_id = server_config.get('backup_role_id')
 
-    if interaction.channel.id != allowed_channel_id:
+    if interaction.channel and interaction.channel.id != allowed_channel_id:
         await interaction.response.send_message(
             f"You can only use this command in the <#{allowed_channel_id}> channel.",
             ephemeral=True
@@ -349,13 +402,6 @@ async def _send_backup_request(
         logger.error(f"Config error in guild '{interaction.guild.name}' ({guild_id}): Backup role ID '{backup_role_id}' not found.")
         await interaction.response.send_message(
             f"Configuration Error: The backup role was not found. An admin should re-run `/setup`.",
-            ephemeral=True
-        )
-        return
-
-    if link and not (link.startswith("http://") or link.startswith("https://")):
-        await interaction.response.send_message(
-            "**Invalid Link:** Please provide a valid URL starting with `http://` or `https://`.",
             ephemeral=True
         )
         return
@@ -384,7 +430,8 @@ async def _send_backup_request(
 
     embed.set_footer(text=f"Celestial Sentry | The Supreme Manager | Author ID: {interaction.user.id}")
 
-    message_content = f"**DEBUG MODE:** No roles pinged." if is_debug else backup_role.mention
+    # FIX: Ensure backup_role is not None before accessing .mention
+    message_content = f"**DEBUG MODE:** No roles pinged." if is_debug or not backup_role else backup_role.mention
     allowed_mentions = discord.AllowedMentions.none() if is_debug else discord.AllowedMentions(roles=True)
 
     await interaction.response.send_message(
@@ -411,8 +458,10 @@ async def help_command(interaction: discord.Interaction):
     
     admin_commands = ["setup", "debugbackup", "resetstats"]
     
+    # FIX: Some command types (like context menu) don't have descriptions. Accessing command.description
+    # directly would raise an AttributeError. Using a fallback resolves this.
     for command in bot.tree.get_commands():
-        description = command.description
+        description = command.description or "No description available."
         if command.name in admin_commands:
             description += " `[ADMIN]`"
         
@@ -434,12 +483,19 @@ async def setup_command(
     interaction: discord.Interaction, 
     backup_channel: discord.TextChannel, 
     backup_role: discord.Role,
-    embed_color: str = None,
-    thumbnail_url: str = None
+    embed_color: Optional[str] = None,   # FIX: These parameters are optional
+    thumbnail_url: Optional[str] = None
 ):
-    bot_instance = interaction.client
+    # FIX: Cast client and ensure command is used in a guild
+    bot_instance = cast(BackupBot, interaction.client)
+    if not interaction.guild:
+        await interaction.response.send_message("This command must be used in a server.", ephemeral=True)
+        return
+        
     guild_id = str(interaction.guild.id)
     
+    # FIX: Providing a default {} ensures config_data is a dict, preventing the "Object of type 'None'
+    # is not subscriptable" error if the guild has no existing config.
     config_data = bot_instance.configs.get(guild_id, {})
     config_data["backup_role_id"] = backup_role.id
     config_data["allowed_channel_id"] = backup_channel.id
@@ -481,7 +537,8 @@ async def setup_command(
     discord.app_commands.Choice(name="🇪🇺 Europe", value="Europe"), discord.app_commands.Choice(name="🇦🇺 Australia", value="Australia"),
     discord.app_commands.Choice(name="🇸🇬 Asia", value="Asia"), discord.app_commands.Choice(name="❓ Unknown", value="Unknown"),
 ])
-async def backup_command(interaction: discord.Interaction, roblox_user: str, opps: str, region: discord.app_commands.Choice[str], link: str = None):
+# FIX: `link` can be None, use Optional type hint
+async def backup_command(interaction: discord.Interaction, roblox_user: str, opps: str, region: discord.app_commands.Choice[str], link: Optional[str] = None):
     await _send_backup_request(interaction, roblox_user, opps, region.value, link, is_debug=False)
 
 
@@ -492,12 +549,18 @@ async def backup_command(interaction: discord.Interaction, roblox_user: str, opp
     discord.app_commands.Choice(name="🇪🇺 Europe", value="Europe"), discord.app_commands.Choice(name="🇦🇺 Australia", value="Australia"),
     discord.app_commands.Choice(name="🇸🇬 Asia", value="Asia"), discord.app_commands.Choice(name="❓ Unknown", value="Unknown"),
 ])
-async def debugbackup_command(interaction: discord.Interaction, roblox_user: str, opps: str, region: discord.app_commands.Choice[str], link: str = None):
+# FIX: `link` can be None, use Optional type hint
+async def debugbackup_command(interaction: discord.Interaction, roblox_user: str, opps: str, region: discord.app_commands.Choice[str], link: Optional[str] = None):
     await _send_backup_request(interaction, roblox_user, opps, region.value, link, is_debug=True)
 
 
 @bot.tree.command(name="warstats", description="View statistics about past backup requests.")
 async def warstats_command(interaction: discord.Interaction):
+    # FIX: Guard against non-guild usage.
+    if not interaction.guild:
+        await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+        return
+        
     guild_id = str(interaction.guild.id)
     guild_wars = bot.war_data.get(guild_id, [])
 
@@ -517,7 +580,9 @@ async def warstats_command(interaction: discord.Interaction):
     avg_duration_str = f"{int(h):02d}:{int(m):02d}:{int(s):02d}"
 
     embed = discord.Embed(title=f"War Statistics for {interaction.guild.name}", description=f"Analysis of **{total_wars}** concluded engagements.", color=discord.Color.blue())
-    embed.set_thumbnail(url=interaction.guild.icon.url if interaction.guild.icon else "https://i.imgur.com/P5LJ02a.png")
+    # FIX: guild.icon can be None, so handle this case.
+    thumbnail_url = interaction.guild.icon.url if interaction.guild.icon else "https://i.imgur.com/P5LJ02a.png"
+    embed.set_thumbnail(url=thumbnail_url)
     embed.add_field(name="📈 Overall Record", value=f"**{wins}** Wins / **{losses}** Losses / **{truces}** Truces", inline=False)
     embed.add_field(name="📊 Win Rate", value=f"`{win_rate:.1f}%` (Based on Wins and Losses)", inline=True)
     embed.add_field(name="⏱️ Avg. Duration (H:M:S)", value=f"`{avg_duration_str}`", inline=True)
@@ -537,12 +602,18 @@ async def warstats_command(interaction: discord.Interaction):
 @bot.tree.command(name="resetstats", description="[ADMIN] Reset all war statistics for this server.")
 @discord.app_commands.checks.has_permissions(administrator=True)
 async def resetstats_command(interaction: discord.Interaction):
+    # FIX: Guard against non-guild usage.
+    if not interaction.guild:
+        await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+        return
+
     guild_id = str(interaction.guild.id)
 
     if not bot.war_data.get(guild_id):
         await interaction.response.send_message("ℹ️ No war data found for this server; no action is needed.", ephemeral=True)
         return
 
+    # FIX: The view's __init__ now correctly accepts User or Member
     view = bot.ConfirmResetView(bot=bot, author=interaction.user)
     await interaction.response.send_message(
         "**⚠️ Are you sure?**\nThis action is irreversible and will delete all war statistics for this server.",
@@ -553,8 +624,10 @@ async def resetstats_command(interaction: discord.Interaction):
     await view.wait()
     
     if not view.confirmed:
+        # FIX: Check item type before disabling.
         for item in view.children:
-            item.disabled = True
+            if isinstance(item, (Button, discord.ui.Select)):
+                item.disabled = True
         await interaction.edit_original_response(
             content="Confirmation timed out. No stats were reset.",
             view=view

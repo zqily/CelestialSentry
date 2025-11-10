@@ -94,13 +94,15 @@ class BackupBot(discord.Client):
         self.dev_guild = discord.Object(id=guild_id)
 
     async def setup_hook(self) -> None:
-        """
-        Called once the bot logs in. Loads data, registers views, and syncs commands.
-        """
+        # Forcing a clear and resync
+        self.tree.clear_commands(guild=self.dev_guild)
+        await self.tree.sync(guild=self.dev_guild) # Clears the commands
+
+        # Now register the new ones
         self.add_view(self.BackupControlsView(bot=self))
         self.tree.copy_global_to(guild=self.dev_guild)
         await self.tree.sync(guild=self.dev_guild)
-        logger.info(f"Commands synced for guild: {self.dev_guild.id}")
+        logger.info(f"Commands forcibly cleared and resynced for guild: {self.dev_guild.id}")
 
     async def on_app_command_error(self, interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
         """Handles errors from all slash commands globally."""
@@ -177,7 +179,8 @@ class BackupBot(discord.Client):
             
             await interaction.response.edit_message(embed=original_embed)
             guild_name = interaction.guild.name if interaction.guild else "DM"
-            logger.info(f"Opponents list edited by {interaction.user} in guild '{guild_name}' ({interaction.guild.id})")
+            guild_id = interaction.guild.id if interaction.guild else "N/A"
+            logger.info(f"Opponents list edited by {interaction.user} in guild '{guild_name}' ({guild_id})")
 
     class ConfirmResetView(View):
         def __init__(self, *, bot: 'BackupBot', author: Union[discord.User, discord.Member]):
@@ -250,7 +253,8 @@ class BackupBot(discord.Client):
             current_opps = ""
             for field in interaction.message.embeds[0].fields:
                 if field.name == "💀 Opponents":
-                    current_opps = field.value.strip('`')
+                    # field.value can be None; ensure we operate on a string
+                    current_opps = (field.value or "").strip('`')
                     break
             await interaction.response.send_modal(self.bot.EditOppsModal(current_opps=current_opps))
 
@@ -273,12 +277,15 @@ class BackupBot(discord.Client):
                 roblox_user, opponents_str, region = "Unknown", "Unknown", "Unknown"
                 for field in original_embed.fields:
                     if field.name == "🛡️ User in Need":
-                        match = re.search(r"\*\*Roblox:\*\* `(.+?)`", field.value)
-                        if match: roblox_user = match.group(1)
+                        # Ensure field.value is a str (fallback to empty string) so re.search accepts it
+                        field_text = field.value if field.value is not None else ""
+                        match = re.search(r"\*\*Roblox:\*\* `(.+?)`", field_text)
+                        if match:
+                            roblox_user = match.group(1)
                     elif field.name == "💀 Opponents":
-                        opponents_str = field.value.strip('`')
+                        opponents_str = (field.value if field.value is not None else "").strip('`')
                     elif field.name == "🌍 Region":
-                        region = field.value.strip('`')
+                        region = (field.value if field.value is not None else "").strip('`')
                 
                 num_opponents = len([opp.strip() for opp in opponents_str.split(',') if opp.strip()])
 
@@ -339,10 +346,10 @@ bot = BackupBot(intents=intents, guild_id=DEV_GUILD_ID)
 
 @bot.event
 async def on_ready():
-    logger.info(f'Logged in as {bot.user.name} (ID: {bot.user.id})')
-    logger.info('Bot is ready and listening for commands.')
-    logger.info('------')
-
+    if bot.user:  # Check if bot.user is not None
+        logger.info(f'Logged in as {bot.user.name} (ID: {bot.user.id})')
+        logger.info('Bot is ready and listening for commands.')
+        logger.info('------')
 
 # --- Shared Command Logic ---
 async def _send_backup_request(
@@ -436,7 +443,7 @@ async def help_command(interaction: discord.Interaction):
     admin_commands = ["setup", "debugbackup", "resetstats"]
     
     for command in bot.tree.get_commands():
-        description = command.description or "No description available."
+        description = getattr(command, 'description', "No description available.")
         if command.name in admin_commands:
             description += " `[ADMIN]`"
         
@@ -468,8 +475,8 @@ async def setup_command(
         
     guild_id = str(interaction.guild.id)
     
-    # is not subscriptable" error if the guild has no existing config.
-    config_data = bot_instance.configs.get(guild_id, {})
+    # Ensure we have a mutable dict for config; fall back to an empty dict if none exists.
+    config_data = bot_instance.configs.get(guild_id) or {}
     config_data["backup_role_id"] = backup_role.id
     config_data["allowed_channel_id"] = backup_channel.id
 
@@ -549,8 +556,13 @@ async def warstats_command(interaction: discord.Interaction):
     m, s = divmod(avg_duration_secs, 60); h, m = divmod(m, 60)
     avg_duration_str = f"{int(h):02d}:{int(m):02d}:{int(s):02d}"
 
-    embed = discord.Embed(title=f"War Statistics for {interaction.guild.name}", description=f"Analysis of **{total_wars}** concluded engagements.", color=discord.Color.blue())
-    thumbnail_url = interaction.guild.icon.url if interaction.guild.icon else "https://i.imgur.com/P5LJ02a.png"
+    # We've already checked that interaction.guild is not None, but this makes it more explicit
+    # for type checkers and future readers.
+    guild = interaction.guild
+    assert guild is not None
+
+    embed = discord.Embed(title=f"War Statistics for {guild.name}", description=f"Analysis of **{total_wars}** concluded engagements.", color=discord.Color.blue())
+    thumbnail_url = guild.icon.url if guild.icon else "https://i.imgur.com/P5LJ02a.png"
     embed.set_thumbnail(url=thumbnail_url)
     embed.add_field(name="📈 Overall Record", value=f"**{wins}** Wins / **{losses}** Losses / **{truces}** Truces", inline=False)
     embed.add_field(name="📊 Win Rate", value=f"`{win_rate:.1f}%` (Based on Wins and Losses)", inline=True)
